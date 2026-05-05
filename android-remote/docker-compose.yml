@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  server:
+    image: server-image
+    ports:
+      - "3000:3000"
+
+  web:
+    image: web-image
+    ports:
+      - "80:80"
+
+networks:
+  android-remote-network:
+    driver: bridge

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:gravity="center_horizontal"
+    android:background="#0f1117">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="📱 Android Remote Agent"
+        android:textSize="20sp"
+        android:textColor="#a5b4fc"
+        android:layout_marginBottom="32dp"/>
+
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="服务器地址 (ws://)" android:textColor="#9ca3af" android:textSize="13sp" android:layout_marginBottom="6dp"/>
+    <EditText android:id="@+id/etServer"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:background="#1a1d27" android:textColor="#e2e8f0"
+        android:padding="12dp" android:textSize="14sp" android:layout_marginBottom="16dp"/>
+
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="设备名称" android:textColor="#9ca3af" android:textSize="13sp" android:layout_marginBottom="6dp"/>
+    <EditText android:id="@+id/etDeviceName"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:background="#1a1d27" android:textColor="#e2e8f0"
+        android:padding="12dp" android:textSize="14sp" android:layout_marginBottom="24dp"/>
+
+    <Button android:id="@+id/btnStart"
+        android:layout_width="match_parent" android:layout_height="48dp"
+        android:text="启动 Agent" android:backgroundTint="#6366f1"
+        android:textColor="#ffffff" android:layout_marginBottom="12dp"/>
+
+    <Button android:id="@+id/btnStop"
+        android:layout_width="match_parent" android:layout_height="48dp"
+        android:text="停止 Agent" android:backgroundTint="#374151"
+        android:textColor="#ffffff" android:layout_marginBottom="24dp"/>
+
+    <TextView android:id="@+id/tvStatus"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:textColor="#22c55e" android:textSize="15sp"/>
+
+</LinearLayout>
