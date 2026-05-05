@@ -10,6 +10,9 @@ local.properties
 *.iml
 .idea/
 
+# Tools (large binaries)
+tools/
+
 # OS
 .DS_Store
 Thumbs.db
