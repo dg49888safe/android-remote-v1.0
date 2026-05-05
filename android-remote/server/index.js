@@ -10,7 +10,7 @@ const { verifyToken } = require('./middleware/auth');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server, path: '/ws' });
+const wss = new WebSocket.Server({ server, path: '/ws', maxPayload: 50 * 1024 * 1024 });
 
 app.use(cors());
 app.use(express.json());

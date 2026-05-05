@@ -2,6 +2,8 @@ package com.remote.agent.service
 
 import android.app.*
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.IBinder
 import android.provider.MediaStore
@@ -12,6 +14,7 @@ import com.remote.agent.MainActivity
 import com.remote.agent.R
 import kotlinx.coroutines.*
 import okhttp3.*
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -251,6 +254,15 @@ class AgentService : Service() {
     private fun startScreenStream(clientId: String, interval: Long) {
         stopScreenStream()
         screenStreamJob = scope.launch {
+            // 第一帧先测试，失败则反馈错误并停止
+            val firstFrame = takeScreenshot()
+            if (firstFrame.startsWith("ERROR")) {
+                send(mapOf("type" to "screen_frame_error", "error" to firstFrame, "clientId" to clientId))
+                return@launch
+            }
+            send(mapOf("type" to "screen_frame", "image" to firstFrame, "clientId" to clientId))
+            delay(interval)
+
             while (isActive) {
                 val base64 = takeScreenshot()
                 if (!base64.startsWith("ERROR")) {
@@ -268,17 +280,28 @@ class AgentService : Service() {
 
     private fun takeScreenshot(): String {
         return try {
-            val path = "${cacheDir.absolutePath}/screenshot.png"
-            val proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", "screencap -p $path"))
+            val rawPath = "${cacheDir.absolutePath}/screenshot.png"
+            // 尝试普通 screencap
+            var proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", "screencap -p $rawPath"))
             proc.waitFor()
-            val file = File(path)
-            if (file.exists()) {
-                val bytes = file.readBytes()
-                file.delete()
-                Base64.encodeToString(bytes, Base64.NO_WRAP)
-            } else {
-                "ERROR: 截图失败，可能需要ROOT权限"
+            var file = File(rawPath)
+            // 如果失败，尝试 su
+            if (!file.exists() || file.length() == 0L) {
+                proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", "su -c 'screencap -p $rawPath'"))
+                proc.waitFor()
+                file = File(rawPath)
             }
+            if (!file.exists() || file.length() == 0L) {
+                return "ERROR: 截图失败，设备可能需要ROOT权限。尝试在Shell中执行 screencap -p /sdcard/test.png 测试"
+            }
+            // 压缩为 JPEG 减小体积
+            val bitmap = BitmapFactory.decodeFile(rawPath)
+            file.delete()
+            if (bitmap == null) return "ERROR: 无法解码截图文件"
+            val baos = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 50, baos)
+            bitmap.recycle()
+            Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
         } catch (e: Exception) {
             "ERROR: ${e.message}"
         }

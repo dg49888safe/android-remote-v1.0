@@ -76,6 +76,11 @@ export const useRemoteStore = defineStore('remote', () => {
       case 'screen_frame':
         screenFrame.value = msg.image
         break
+      case 'screen_frame_error':
+        screenFrame.value = ''
+        screenStreaming.value = false
+        alert('屏控失败: ' + msg.error)
+        break
     }
   }
 
