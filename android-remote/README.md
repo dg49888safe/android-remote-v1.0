@@ -1,6 +1,6 @@
 # Android Remote Control System
 
-基于 WebSocket 信令的 Android 远程管理平台，支持远程 Shell、文件管理、App 自动化操作。
+基于 WebSocket 信令的 Android 远程管理平台，支持远程 Shell、文件管理、App 自动化操作、短信读取、相册浏览、屏幕截图。
 
 ## 架构总览
 
