@@ -1,10 +1,19 @@
 package com.remote.agent.service
 
 import android.app.*
+import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.PixelFormat
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
+import android.media.ImageReader
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
+import android.os.Build
 import android.os.IBinder
 import android.provider.MediaStore
 import android.util.Base64
@@ -34,6 +43,12 @@ class AgentService : Service() {
     private var deviceId = ""
     private var reconnecting = false
     private var screenStreamJob: Job? = null
+    private var mediaProjection: MediaProjection? = null
+    private var virtualDisplay: VirtualDisplay? = null
+    private var imageReader: ImageReader? = null
+    private var screenWidth = 720
+    private var screenHeight = 1280
+    private var screenDpi = 320
 
     override fun onCreate() {
         super.onCreate()
@@ -50,11 +65,60 @@ class AgentService : Service() {
             id
         }
 
-        startForeground(1, buildNotification("连接中..."))
+        // 根据是否有 projection 数据决定 foreground service 类型
+        val projResultCode = intent.getIntExtra("projectionResultCode", -1)
+        @Suppress("DEPRECATION")
+        val projData: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra("projectionData", Intent::class.java)
+        } else {
+            intent.getParcelableExtra("projectionData")
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val svcType = if (projResultCode != -1 && projData != null) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            }
+            startForeground(1, buildNotification("连接中..."), svcType)
+        } else {
+            startForeground(1, buildNotification("连接中..."))
+        }
+
+        // 初始化 MediaProjection
+        if (projResultCode != -1 && projData != null) {
+            setupScreenCapture(projResultCode, projData)
+        }
+
         isRunning = true
         connect()
         startHeartbeat()
         return START_STICKY
+    }
+
+    private fun setupScreenCapture(resultCode: Int, data: Intent) {
+        try {
+            val metrics = resources.displayMetrics
+            screenWidth = metrics.widthPixels
+            screenHeight = metrics.heightPixels
+            screenDpi = metrics.densityDpi
+
+            val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            mediaProjection = mpm.getMediaProjection(resultCode, data)
+            imageReader = ImageReader.newInstance(screenWidth, screenHeight, PixelFormat.RGBA_8888, 2)
+            virtualDisplay = mediaProjection?.createVirtualDisplay(
+                "RemoteAgentScreen",
+                screenWidth, screenHeight, screenDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader!!.surface, null, null
+            )
+            Log.i(TAG, "MediaProjection 屏幕捕获已初始化 (${screenWidth}x${screenHeight})")
+        } catch (e: Exception) {
+            Log.e(TAG, "MediaProjection 初始化失败: ${e.message}")
+            mediaProjection = null
+            virtualDisplay = null
+            imageReader = null
+        }
     }
 
     private fun connect() {
@@ -279,22 +343,54 @@ class AgentService : Service() {
     }
 
     private fun takeScreenshot(): String {
+        // 优先使用 MediaProjection
+        val projResult = captureFromProjection()
+        if (projResult != null) return projResult
+        // 回退到 screencap
+        return takeScreenshotFallback()
+    }
+
+    private fun captureFromProjection(): String? {
+        val reader = imageReader ?: return null
+        val image = try { reader.acquireLatestImage() } catch (e: Exception) { null } ?: return null
+        try {
+            val planes = image.planes
+            val buffer = planes[0].buffer
+            val pixelStride = planes[0].pixelStride
+            val rowStride = planes[0].rowStride
+            val rowPadding = rowStride - pixelStride * image.width
+
+            val bmpWidth = image.width + rowPadding / pixelStride
+            val bitmap = Bitmap.createBitmap(bmpWidth, image.height, Bitmap.Config.ARGB_8888)
+            bitmap.copyPixelsFromBuffer(buffer)
+
+            val finalBitmap = if (rowPadding > 0) {
+                val cropped = Bitmap.createBitmap(bitmap, 0, 0, image.width, image.height)
+                bitmap.recycle()
+                cropped
+            } else bitmap
+
+            val baos = ByteArrayOutputStream()
+            finalBitmap.compress(Bitmap.CompressFormat.JPEG, 50, baos)
+            finalBitmap.recycle()
+            return Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+        } catch (e: Exception) {
+            Log.e(TAG, "MediaProjection 截图失败: ${e.message}")
+            return null
+        } finally {
+            image.close()
+        }
+    }
+
+    private fun takeScreenshotFallback(): String {
         return try {
             val rawPath = "${cacheDir.absolutePath}/screenshot.png"
-            // 尝试普通 screencap
-            var proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", "screencap -p $rawPath"))
+            val proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", "screencap -p $rawPath"))
             proc.waitFor()
-            var file = File(rawPath)
-            // 如果失败，尝试 su
+            val file = File(rawPath)
             if (!file.exists() || file.length() == 0L) {
-                proc = Runtime.getRuntime().exec(arrayOf("sh", "-c", "su -c 'screencap -p $rawPath'"))
-                proc.waitFor()
-                file = File(rawPath)
+                return "ERROR: 截图失败。请重新启动 Agent 并允许屏幕录制权限"
             }
-            if (!file.exists() || file.length() == 0L) {
-                return "ERROR: 截图失败，设备可能需要ROOT权限。尝试在Shell中执行 screencap -p /sdcard/test.png 测试"
-            }
-            // 压缩为 JPEG 减小体积
             val bitmap = BitmapFactory.decodeFile(rawPath)
             file.delete()
             if (bitmap == null) return "ERROR: 无法解码截图文件"
@@ -363,6 +459,9 @@ class AgentService : Service() {
     override fun onDestroy() {
         isRunning = false
         stopScreenStream()
+        virtualDisplay?.release()
+        imageReader?.close()
+        mediaProjection?.stop()
         scope.cancel()
         ws?.close(1000, "Service stopped")
         super.onDestroy()
