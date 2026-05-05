@@ -30,6 +30,7 @@ class AgentService : Service() {
     private var deviceName = ""
     private var deviceId = ""
     private var reconnecting = false
+    private var screenStreamJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -137,6 +138,25 @@ class AgentService : Service() {
                     val base64 = takeScreenshot()
                     send(mapOf("type" to "screenshot", "image" to base64, "clientId" to clientId))
                 }
+                "screen_stream_start" -> {
+                    val interval = (msg["interval"] as? Double)?.toLong() ?: 1500
+                    startScreenStream(clientId ?: "", interval)
+                }
+                "screen_stream_stop" -> {
+                    stopScreenStream()
+                }
+                "swipe" -> {
+                    val x1 = (msg["x1"] as? Double)?.toInt() ?: 0
+                    val y1 = (msg["y1"] as? Double)?.toInt() ?: 0
+                    val x2 = (msg["x2"] as? Double)?.toInt() ?: 0
+                    val y2 = (msg["y2"] as? Double)?.toInt() ?: 0
+                    val duration = (msg["duration"] as? Double)?.toInt() ?: 300
+                    execShell("input swipe $x1 $y1 $x2 $y2 $duration")
+                }
+                "key_event" -> {
+                    val keyCode = (msg["keyCode"] as? Double)?.toInt() ?: return
+                    execShell("input keyevent $keyCode")
+                }
                 "heartbeat_ack" -> { /* 忽略 */ }
             }
         } catch (e: Exception) {
@@ -228,6 +248,24 @@ class AgentService : Service() {
         }
     }
 
+    private fun startScreenStream(clientId: String, interval: Long) {
+        stopScreenStream()
+        screenStreamJob = scope.launch {
+            while (isActive) {
+                val base64 = takeScreenshot()
+                if (!base64.startsWith("ERROR")) {
+                    send(mapOf("type" to "screen_frame", "image" to base64, "clientId" to clientId))
+                }
+                delay(interval)
+            }
+        }
+    }
+
+    private fun stopScreenStream() {
+        screenStreamJob?.cancel()
+        screenStreamJob = null
+    }
+
     private fun takeScreenshot(): String {
         return try {
             val path = "${cacheDir.absolutePath}/screenshot.png"
@@ -301,6 +339,7 @@ class AgentService : Service() {
 
     override fun onDestroy() {
         isRunning = false
+        stopScreenStream()
         scope.cancel()
         ws?.close(1000, "Service stopped")
         super.onDestroy()

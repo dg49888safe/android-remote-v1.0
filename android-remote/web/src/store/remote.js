@@ -16,6 +16,8 @@ export const useRemoteStore = defineStore('remote', () => {
   const photoList = reactive([])
   const screenshot = ref('')
   const photoPreview = ref('')
+  const screenFrame = ref('')
+  const screenStreaming = ref(false)
 
   function connect(token) {
     const wsUrl = `ws://${SERVER}:3000/ws?type=web&token=${token}`
@@ -71,6 +73,9 @@ export const useRemoteStore = defineStore('remote', () => {
       case 'screenshot':
         screenshot.value = msg.image
         break
+      case 'screen_frame':
+        screenFrame.value = msg.image
+        break
     }
   }
 
@@ -123,10 +128,30 @@ export const useRemoteStore = defineStore('remote', () => {
     send({ type: 'screenshot' })
   }
 
+  function startScreenStream(interval = 1500) {
+    send({ type: 'screen_stream_start', interval })
+    screenStreaming.value = true
+  }
+
+  function stopScreenStream() {
+    send({ type: 'screen_stream_stop' })
+    screenStreaming.value = false
+  }
+
+  function swipe(x1, y1, x2, y2, duration = 300) {
+    send({ type: 'swipe', x1, y1, x2, y2, duration })
+  }
+
+  function keyEvent(keyCode) {
+    send({ type: 'key_event', keyCode })
+  }
+
   return {
     connected, devices, selectedDevice, cmdOutput, fileList, logs,
     smsList, photoList, screenshot, photoPreview,
+    screenFrame, screenStreaming,
     connect, selectDevice, sendShell, listFiles, tapScreen, sendInput, launchApp,
-    fetchSms, fetchPhotos, fetchPhoto, fetchScreenshot
+    fetchSms, fetchPhotos, fetchPhoto, fetchScreenshot,
+    startScreenStream, stopScreenStream, swipe, keyEvent
   }
 })

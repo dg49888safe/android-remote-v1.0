@@ -139,6 +139,39 @@
           </div>
           <div v-else class="empty">点击上方按钮截取屏幕</div>
         </section>
+
+        <!-- 屏幕控制 -->
+        <section class="panel">
+          <div class="panel-title">📱 屏幕控制（实时）</div>
+          <div class="input-row" style="margin-bottom:12px;">
+            <button v-if="!store.screenStreaming" @click="store.startScreenStream(streamInterval)">▶ 开始屏控</button>
+            <button v-else class="btn-stop" @click="store.stopScreenStream()">■ 停止屏控</button>
+            <select v-model.number="streamInterval" class="interval-select">
+              <option :value="1000">1秒/帧</option>
+              <option :value="1500">1.5秒/帧</option>
+              <option :value="2000">2秒/帧</option>
+              <option :value="3000">3秒/帧</option>
+            </select>
+          </div>
+          <div class="screen-container">
+            <div v-if="!store.screenFrame" class="empty">点击“开始屏控”查看实时画面，可直接在画面上点击/滑动操作</div>
+            <img
+              v-else
+              ref="screenImg"
+              :src="'data:image/png;base64,' + store.screenFrame"
+              class="screen-live-img"
+              @mousedown="onScreenMouseDown"
+              @mouseup="onScreenMouseUp"
+              @mouseleave="onScreenMouseUp"
+              draggable="false"
+            />
+          </div>
+          <div class="nav-bar">
+            <button class="nav-btn" @click="store.keyEvent(4)">◀ 返回</button>
+            <button class="nav-btn" @click="store.keyEvent(3)">● 主页</button>
+            <button class="nav-btn" @click="store.keyEvent(187)">■ 最近</button>
+          </div>
+        </section>
       </div>
     </main>
   </div>
@@ -158,6 +191,41 @@ const inputText = ref('')
 const launchPkg = ref('')
 const filePath = ref('/sdcard')
 const termEl = ref(null)
+const screenImg = ref(null)
+const streamInterval = ref(1500)
+let mouseStart = null
+
+function onScreenMouseDown(e) {
+  const rect = e.target.getBoundingClientRect()
+  mouseStart = { x: e.clientX - rect.left, y: e.clientY - rect.top, time: Date.now(), rect }
+}
+
+function onScreenMouseUp(e) {
+  if (!mouseStart || !screenImg.value) return
+  const rect = mouseStart.rect
+  const img = screenImg.value
+  const scaleX = img.naturalWidth / rect.width
+  const scaleY = img.naturalHeight / rect.height
+  const endX = e.clientX - rect.left
+  const endY = e.clientY - rect.top
+  const dx = endX - mouseStart.x
+  const dy = endY - mouseStart.y
+  const dist = Math.sqrt(dx * dx + dy * dy)
+
+  if (dist < 8) {
+    const devX = Math.round(mouseStart.x * scaleX)
+    const devY = Math.round(mouseStart.y * scaleY)
+    store.tapScreen(devX, devY)
+  } else {
+    const x1 = Math.round(mouseStart.x * scaleX)
+    const y1 = Math.round(mouseStart.y * scaleY)
+    const x2 = Math.round(endX * scaleX)
+    const y2 = Math.round(endY * scaleY)
+    const duration = Math.min(Math.max(Date.now() - mouseStart.time, 100), 2000)
+    store.swipe(x1, y1, x2, y2, duration)
+  }
+  mouseStart = null
+}
 
 function formatDate(ts) {
   if (!ts) return ''
@@ -242,4 +310,12 @@ function logout() {
 .preview-img { max-width:100%; max-height:400px; border-radius:8px; border:1px solid #2d3148; }
 .screenshot-box { margin-top:12px; }
 .screenshot-img { max-width:100%; max-height:500px; border-radius:8px; border:1px solid #2d3148; }
+.btn-stop { background:#ef4444 !important; }
+.btn-stop:hover { background:#dc2626 !important; }
+.interval-select { background:#0f1117; border:1px solid #2d3148; border-radius:8px; padding:8px 12px; color:#e2e8f0; font-size:13px; outline:none; }
+.screen-container { background:#000; border-radius:8px; overflow:hidden; display:flex; justify-content:center; min-height:200px; }
+.screen-live-img { max-width:100%; max-height:600px; cursor:crosshair; user-select:none; -webkit-user-drag:none; }
+.nav-bar { display:flex; justify-content:center; gap:16px; margin-top:12px; }
+.nav-btn { background:#1e2235; border:1px solid #2d3148; color:#e2e8f0; border-radius:8px; padding:10px 24px; cursor:pointer; font-size:13px; transition:background .15s; }
+.nav-btn:hover { background:#2d3148; }
 </style>
